@@ -40,6 +40,12 @@ int NvQosLoad(CipQosObject *p_qos) {
 
   FILE  *p_file = ConfFileOpen(false, QOS_CFG_NAME);
   if (NULL != p_file) {
+
+/* Disable VS fscanf depreciation warning. */
+#ifdef _MSC_VER
+#pragma warning(disable : 4996)
+#endif /* _MSC_VER */
+
     /* Read input data */
     rd_cnt = fscanf(p_file,
                     " %" SCNu8 ", %" SCNu8 ", %" SCNu8 ", %" SCNu8 ", %" SCNu8 "\n",
@@ -48,6 +54,11 @@ int NvQosLoad(CipQosObject *p_qos) {
                     &dscp_high,
                     &dscp_low,
                     &dscp_explicit);
+
+/* Restore default depreciation warning behavior. */
+#ifdef _MSC_VER
+#pragma warning(default : 4996)
+#endif /* _MSC_VER */
 
     /* Need to try to close all stuff in any case. */
     eip_status = ConfFileClose(&p_file);
@@ -77,21 +88,21 @@ EipStatus NvQosStore(const CipQosObject *p_qos) {
   EipStatus eip_status = kEipStatusOk;
   if (NULL != p_file) {
     /* Print output data */
-    if (0 >= fprintf(p_file,
-                     " %" PRIu8 ", %" PRIu8 ", %" PRIu8 ", %" PRIu8 ", %" PRIu8
-                     "\n",
-                     p_qos->dscp.urgent,
-                     p_qos->dscp.scheduled,
-                     p_qos->dscp.high,
-                     p_qos->dscp.low,
-                     p_qos->dscp.explicit_msg) ) {
+    if ( 0 >= fprintf(p_file,
+                      " %" PRIu8 ", %" PRIu8 ", %" PRIu8 ", %" PRIu8 ", %" PRIu8
+                      "\n",
+                      p_qos->dscp.urgent,
+                      p_qos->dscp.scheduled,
+                      p_qos->dscp.high,
+                      p_qos->dscp.low,
+                      p_qos->dscp.explicit_msg) ) {
       eip_status = kEipStatusError;
     }
 
     /* Need to try to close all stuff in any case. */
     eip_status =
-      (kEipStatusError ==
-       ConfFileClose(&p_file) ) ? kEipStatusError : eip_status;
+      ( kEipStatusError ==
+        ConfFileClose(&p_file) ) ? kEipStatusError : eip_status;
   }
   return eip_status;
 }

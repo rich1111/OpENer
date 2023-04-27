@@ -29,6 +29,7 @@
 #include "cipepath.h"
 #include "stdlib.h"
 #include "ciptypes.h"
+#include "cipstring.h"
 
 #if defined(CIP_FILE_OBJECT) && 0 != CIP_FILE_OBJECT
   #include "OpENerFileObject/cipfile.h"
@@ -864,9 +865,6 @@ int DecodeCipByteArray(CipByteArray *const data,
                        const CipMessageRouterRequest *const message_router_request,
                        CipMessageRouterResponse *const message_router_response)
 {
-
-  const EipUint8 **const cip_message = message_router_request->data;
-
   int number_of_decoded_bytes = -1;
   OPENER_TRACE_INFO(" -> set attribute byte array\r\n");
   CipByteArray *cip_byte_array = data;
@@ -885,7 +883,9 @@ int DecodeCipByteArray(CipByteArray *const data,
   }
 
   // data-length is correct
-  memcpy(cip_byte_array->data, &cip_message, cip_byte_array->length);
+  memcpy(cip_byte_array->data,
+         message_router_request->data,
+         cip_byte_array->length);
   number_of_decoded_bytes = cip_byte_array->length;
 
   message_router_response->general_status = kCipErrorSuccess;
@@ -1010,44 +1010,49 @@ int DecodeCipLreal(CipLreal *const data,
 }
 
 int DecodeCipString(CipString *const data,
-                    const CipMessageRouterRequest *const message_router_request,
+                    CipMessageRouterRequest *const message_router_request,
                     CipMessageRouterResponse *const message_router_response) {
-
-  const EipUint8 **const cip_message = message_router_request->data;
 
   int number_of_decoded_bytes = -1;
   CipString *string = data;
-  string->length = GetIntFromMessage(&cip_message);
-  memcpy(string->string, cip_message, string->length);
-  *cip_message += string->length;
+
+  const CipUint length = GetUintFromMessage(&message_router_request->data);
+
+  string = SetCipStringByData(string, length, message_router_request->data);
+
+  const CipOctet **const buffer_address = &message_router_request->data;
+  *buffer_address += string->length;
 
   number_of_decoded_bytes = string->length + 2; /* we have a two byte length field */
   if(number_of_decoded_bytes & 0x01) {
     /* we have an odd byte count */
-    ++(*cip_message);
+    ++(*buffer_address);
     number_of_decoded_bytes++;
   }
+
   message_router_response->general_status = kCipErrorSuccess;
   return number_of_decoded_bytes;
 }
 
-int DecodeCipShortString(CipShortString *const data,
-                         const CipMessageRouterRequest *const message_router_request,
+int DecodeCipShortString(CipShortString *data,
+                         CipMessageRouterRequest *const message_router_request,
                          CipMessageRouterResponse *const message_router_response)
 {
-
-  const EipUint8 **const cip_message = message_router_request->data;
 
   int number_of_decoded_bytes = -1;
   CipShortString *short_string = data;
 
-  short_string->length = **cip_message;
-  ++(*cip_message);
+  const CipUsint length = GetUsintFromMessage(&message_router_request->data);
 
-  memcpy(short_string->string, &cip_message, short_string->length);
-  *cip_message += short_string->length;
+  short_string = SetCipShortStringByData(short_string,
+                                         length,
+                                         message_router_request->data);
 
-  number_of_decoded_bytes = short_string->length + 1;
+  const CipOctet **const buffer_address = &message_router_request->data;
+  *buffer_address += short_string->length;
+
+  number_of_decoded_bytes = short_string->length + 1; /* we have a one byte length field */
+
   message_router_response->general_status = kCipErrorSuccess;
   return number_of_decoded_bytes;
 }
@@ -1130,7 +1135,7 @@ EipStatus GetAttributeList(CipInstance *instance,
     CipAttributeStruct *attribute = NULL;
 
     CipOctet *attribute_count_responst_position =
-        message_router_response->message.current_message_position;
+      message_router_response->message.current_message_position;
 
     MoveMessageNOctets(sizeof(CipInt), &message_router_response->message);  // move the message pointer to reserve memory
 
@@ -1139,20 +1144,28 @@ EipStatus GetAttributeList(CipInstance *instance,
       attribute = GetCipAttribute(instance, attribute_number);
 
       const int_fast64_t needed_message_space = NULL != attribute
-          ? (int_fast64_t) GetCipDataTypeLength(attribute->type, attribute->data) : (int_fast64_t) (2 * sizeof(CipSint));
+          ? (int_fast64_t) GetCipDataTypeLength(attribute->type,
+                                                attribute->data) : (int_fast64_t) (
+        2
+        *
+        sizeof(
+          CipSint) );
 
-      const int_fast64_t remaining_message_space = (int_fast64_t) PC_OPENER_ETHERNET_BUFFER_SIZE - (int_fast64_t)  message_router_response->message.used_message_length - 33LL; //need 33 bytes extra space for the rest of the ENIP message
+      const int_fast64_t remaining_message_space =
+        (int_fast64_t) PC_OPENER_ETHERNET_BUFFER_SIZE -
+        (int_fast64_t)  message_router_response->message.used_message_length -
+        33LL;                                                                                                                                                                   //need 33 bytes extra space for the rest of the ENIP message
       if (needed_message_space > remaining_message_space) {
         message_router_response->message.used_message_length -= 2;  // Correct count from Move above
         CipOctet *const save_current_position =
-            message_router_response->message.current_message_position;
+          message_router_response->message.current_message_position;
         message_router_response->message.current_message_position =
-            attribute_count_responst_position;
+          attribute_count_responst_position;
         AddIntToMessage(attribute_count_request,
                         &message_router_response
-                             ->message);  // Add current amount of attributes
+                        ->message);       // Add current amount of attributes
         message_router_response->message.current_message_position =
-            save_current_position;
+          save_current_position;
         // If there was not alreay an attribute list error, resturn partial
         // transfer
         if (message_router_response->general_status !=
@@ -1188,13 +1201,15 @@ EipStatus GetAttributeList(CipInstance *instance,
     }
     // If we are there, we returned all elements
     message_router_response->message.used_message_length -= 2;  // Correct count from Move above
-    CipOctet *const save_current_position = message_router_response->message.current_message_position;
-    message_router_response->message.current_message_position = attribute_count_responst_position;
-    AddIntToMessage(
-        attribute_count_request,
-        &message_router_response->message);  // Add current amount of attributes
+    CipOctet *const save_current_position =
+      message_router_response->message.current_message_position;
     message_router_response->message.current_message_position =
-        save_current_position;
+      attribute_count_responst_position;
+    AddIntToMessage(
+      attribute_count_request,
+      &message_router_response->message);    // Add current amount of attributes
+    message_router_response->message.current_message_position =
+      save_current_position;
   } else {
     message_router_response->general_status = kCipErrorAttributeListError;
   }
@@ -1226,7 +1241,7 @@ EipStatus SetAttributeList(CipInstance *instance,
     CipAttributeStruct *attribute = NULL;
 
     CipOctet *attribute_count_responst_position =
-        message_router_response->message.current_message_position;
+      message_router_response->message.current_message_position;
 
     MoveMessageNOctets(sizeof(CipInt), &message_router_response->message);  // move the message pointer to reserve memory
 
@@ -1235,20 +1250,28 @@ EipStatus SetAttributeList(CipInstance *instance,
       attribute = GetCipAttribute(instance, attribute_number);
 
       const int_fast64_t needed_message_space = NULL != attribute
-          ? (int_fast64_t) GetCipDataTypeLength(attribute->type, attribute->data) : (int_fast64_t) (2 * sizeof(CipSint));
+          ? (int_fast64_t) GetCipDataTypeLength(attribute->type,
+                                                attribute->data) : (int_fast64_t) (
+        2
+        *
+        sizeof(
+          CipSint) );
 
-      const int_fast64_t remaining_message_space = (int_fast64_t) PC_OPENER_ETHERNET_BUFFER_SIZE - (int_fast64_t)  message_router_response->message.used_message_length - 33LL; //need 33 bytes extra space for the rest of the ENIP message
+      const int_fast64_t remaining_message_space =
+        (int_fast64_t) PC_OPENER_ETHERNET_BUFFER_SIZE -
+        (int_fast64_t)  message_router_response->message.used_message_length -
+        33LL;                                                                                                                                                                   //need 33 bytes extra space for the rest of the ENIP message
       if (needed_message_space > remaining_message_space) {
-         message_router_response->message.used_message_length -= 2;  // Correct count from Move above
+        message_router_response->message.used_message_length -= 2;   // Correct count from Move above
         CipOctet *const save_current_position =
-            message_router_response->message.current_message_position;
+          message_router_response->message.current_message_position;
         message_router_response->message.current_message_position =
-            attribute_count_responst_position;
+          attribute_count_responst_position;
         AddIntToMessage(attribute_count_request,
                         &message_router_response
-                             ->message);  // Add current amount of attributes
+                        ->message);       // Add current amount of attributes
         message_router_response->message.current_message_position =
-            save_current_position;
+          save_current_position;
         // If there was not alreay an attribute list error, resturn partial
         // transfer
         if (message_router_response->general_status !=
@@ -1257,7 +1280,7 @@ EipStatus SetAttributeList(CipInstance *instance,
         }
         return kEipStatusOkSend;
       }
-      
+
       AddIntToMessage(attribute_number, &message_router_response->message); // Attribute-ID
 
       if(NULL != attribute) {
@@ -1276,8 +1299,8 @@ EipStatus SetAttributeList(CipInstance *instance,
           AddSintToMessage(0, &message_router_response->message); // Reserved, shall be 0
 
           //move request message pointer
-          int attribute_data_length = GetCipDataTypeLength(attribute->type,
-                                                           message_router_request->data);
+          size_t attribute_data_length = GetCipDataTypeLength(attribute->type,
+                                                              message_router_request->data);
           if(0 != attribute_data_length) {
             message_router_request->data += attribute_data_length;
             message_router_response->general_status =
@@ -1296,16 +1319,16 @@ EipStatus SetAttributeList(CipInstance *instance,
     }
     // If we are there, we returned all elements
     message_router_response->message.used_message_length -=
-        2;  // Correct count from Move above
+      2;    // Correct count from Move above
     CipOctet *const save_current_position =
-        message_router_response->message.current_message_position;
+      message_router_response->message.current_message_position;
     message_router_response->message.current_message_position =
-        attribute_count_responst_position;
+      attribute_count_responst_position;
     AddIntToMessage(
-        attribute_count_request,
-        &message_router_response->message);  // Add current amount of attributes
+      attribute_count_request,
+      &message_router_response->message);    // Add current amount of attributes
     message_router_response->message.current_message_position =
-        save_current_position;
+      save_current_position;
   } else {
     message_router_response->general_status = kCipErrorAttributeListError;
   }
@@ -1579,9 +1602,9 @@ EipStatus CipResetService(CipInstance *RESTRICT const instance,
 }
 
 void AllocateAttributeMasks(CipClass *target_class) {
-  unsigned size = 1 + CalculateIndex(target_class->highest_attribute_number);
+  size_t size = 1 + CalculateIndex(target_class->highest_attribute_number);
   OPENER_TRACE_INFO(
-    ">>> Allocate memory for %s %u bytes times 3 for masks\n",
+    ">>> Allocate memory for %s %zu bytes times 3 for masks\n",
     target_class->class_name, size);
   target_class->get_single_bit_mask = CipCalloc( size, sizeof(uint8_t) );
   target_class->set_bit_mask = CipCalloc( size, sizeof(uint8_t) );
