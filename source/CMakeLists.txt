@@ -31,12 +31,19 @@ if(NOT DEFINED OpENer_Device_Minor_Version)
   set(OpENer_Device_Minor_Version ${PROJECT_VERSION_MINOR} CACHE STRING "Minor Version")
 endif()
 
+message(STATUS "PROJECT_SOURCE_DIR => ${PROJECT_SOURCE_DIR}")
+message(STATUS "PROJECT_BINARY_DIR => ${PROJECT_BINARY_DIR}")
+message(STATUS "OpENer_PLATFORM => ${OpENer_PLATFORM}")
+
 configure_file(  
 	"${PROJECT_SOURCE_DIR}/src/ports/devicedata.h.in"
 	"${PROJECT_BINARY_DIR}/src/ports/devicedata.h"
 	)
 
-find_path( OpENer_BUILDSUPPORT_DIR OpENer.cmake ${PROJECT_SOURCE_DIR}/buildsupport )
+find_path( OpENer_BUILDSUPPORT_DIR
+        NAMES OpENer.cmake
+        PATHS ${PROJECT_SOURCE_DIR}/buildsupport
+        NO_CMAKE_FIND_ROOT_PATH )
 
 INCLUDE( ${OpENer_BUILDSUPPORT_DIR}/OpENer.cmake )
 
